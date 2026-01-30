@@ -1,0 +1,51 @@
+
+services:
+  ingest_data:
+    build: .
+    container_name: sap_ingest_service
+    command: python ingest_sap_data.py
+    env_file: .env
+    volumes:
+      - .:/app  # 👈 Crucial: Links your project folder to the container
+    dns:
+      - 8.8.8.8
+    extra_hosts:
+      - "db.urznazjgyntqoncrctiv.supabase.co:13.235.151.19"
+    networks:
+      - sap-net
+
+  train_model:
+    build: .
+    container_name: sap_train_service
+    command: python train_model.py
+    env_file: .env
+    volumes:
+      - .:/app  # 👈 Crucial: Allows the model file to be written to your disk
+    dns:
+      - 8.8.8.8
+    extra_hosts:
+      - "db.urznazjgyntqoncrctiv.supabase.co:13.235.151.19"
+    depends_on:
+      - ingest_data
+    networks:
+      - sap-net
+
+  web_app:
+    build: .
+    container_name: sap_intel_app
+    command: python app.py
+    volumes:
+      - .:/app  # 👈 Crucial: Allows the web app to read the model file
+    ports:
+      - "5000:5000"
+    env_file: .env
+    dns:
+      - 8.8.8.8
+    extra_hosts:
+      - "db.urznazjgyntqoncrctiv.supabase.co:13.235.151.19"
+    networks:
+      - sap-net
+
+networks:
+  sap-net:
+    driver: bridge

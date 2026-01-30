@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAP Procurement Intel | Risk Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root { 
+            --sap-blue: #0070f2; 
+            --sap-dark: #2c3e50; 
+            --sap-success: #2e7d32;
+            --sap-error: #c62828;
+        }
+        
+        body { 
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
+            min-height: 100vh; 
+            font-family: '72', 'Segoe UI', sans-serif; 
+            padding-bottom: 50px;
+        }
+
+        .sap-header { 
+            background: var(--sap-dark); 
+            color: white; 
+            padding: 1.2rem; 
+            margin-bottom: 2.5rem; 
+            box-shadow: 0 2px 15px rgba(0,0,0,0.3); 
+        }
+
+        .glass-card { 
+            background: rgba(255, 255, 255, 0.92); 
+            border-radius: 12px; 
+            border: 1px solid rgba(255,255,255,0.3); 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+            backdrop-filter: blur(8px);
+            margin-bottom: 20px;
+        }
+
+        .btn-sap { background: var(--sap-blue); color: white; font-weight: 600; border-radius: 4px; transition: all 0.2s; border: none; }
+        .btn-sap:hover { background: #005bbd; color: white; transform: translateY(-1px); }
+
+        .risk-badge { font-size: 1.4rem; padding: 15px; border-radius: 8px; display: none; font-weight: bold; }
+
+        /* Audit Log Styles */
+        .table-container { max-height: 350px; overflow-y: auto; }
+        .table thead th { background: #f8f9fa; position: sticky; top: 0; z-index: 10; font-size: 0.75rem; color: #6c757d; }
+
+        .status-pill { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; color: white; }
+        .bg-danger { background-color: var(--sap-error) !important; }
+        .bg-success { background-color: var(--sap-success) !important; }
+        
+        .stat-label { font-size: 0.7rem; color: #6c757d; text-transform: uppercase; font-weight: bold; }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: var(--sap-dark); }
+    </style>
+</head>
+<body>
+    <header class="sap-header text-center">
+        <h2 class="mb-0 text-uppercase tracking-wider">Predictive Risk Intelligence</h2>
+    </header>
+
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card glass-card p-3 text-center">
+                    <div class="stat-label">Total Analyzed</div>
+                    <div id="stat-total" class="stat-value">0</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card glass-card p-3 text-center border-start border-danger border-4">
+                    <div class="stat-label">High Risk Detected</div>
+                    <div id="stat-high" class="stat-value text-danger">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-4 col-md-5">
+                <div class="card glass-card p-4 h-100">
+                    <h5 class="mb-4 text-center text-muted text-uppercase">Analysis Engine</h5>
+                    <div class="mb-4">
+                        <label class="form-label text-muted small fw-bold">PO NET AMOUNT (USD)</label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text bg-white border-end-0">$</span>
+                            <input type="number" id="amount" class="form-control border-start-0" placeholder="0.00">
+                        </div>
+                    </div>
+                    <button onclick="analyze()" class="btn btn-sap btn-lg w-100 py-3 shadow-sm mb-3">RUN PREDICTION</button>
+                    
+                    <div id="loader" class="text-center mt-3" style="display:none;">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="small text-muted mt-2">Accessing Gradient Boost Model...</p>
+                    </div>
+
+                    <div id="result-box" class="mt-2 text-center">
+                        <div id="risk-text" class="risk-badge"></div>
+                        <div id="conf-container" style="display:none;" class="mt-4">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="small text-muted fw-bold">AI CONFIDENCE</span>
+                                <span id="conf-val" class="small fw-bold text-primary"></span>
+                            </div>
+                            <div class="progress" style="height: 6px;">
+                                <div id="conf-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-8 col-md-7">
+                <div class="card glass-card p-4 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+                        <h5 class="mb-0 text-muted text-uppercase">Risk Audit Trail</h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary me-2" onclick="downloadCSV()">EXPORT CSV</button>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="clearLog()">CLEAR</button>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container">
+                        <table class="table table-hover align-middle" id="auditLog">
+                            <thead>
+                                <tr>
+                                    <th>TIMESTAMP</th>
+                                    <th>AMOUNT</th>
+                                    <th>RISK LEVEL</th>
+                                    <th>CONFIDENCE</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logBody">
+                                <tr id="emptyMsg"><td colspan="4" class="text-center text-muted py-5">No active sessions. Start analysis to populate log.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let totalCount = 0;
+        let highRiskCount = 0;
+
+        async function analyze() {
+            const amtInput = document.getElementById('amount');
+            const amt = amtInput.value;
+            if(!amt || amt <= 0) return alert("Enter valid amount");
+            
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('result-box').style.opacity = '0.3';
+
+            try {
+                const res = await fetch('/predict', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ amount: amt })
+                });
+                const data = await res.json();
+                
+                // Update Main Result
+                const badge = document.getElementById('risk-text');
+                badge.className = `risk-badge badge bg-${data.status} w-100 d-block shadow-sm`;
+                badge.innerText = data.risk.toUpperCase();
+                badge.style.display = 'block';
+                
+                document.getElementById('conf-container').style.display = 'block';
+                document.getElementById('conf-bar').style.width = data.score + '%';
+                document.getElementById('conf-bar').className = `progress-bar bg-${data.status}`;
+                document.getElementById('conf-val').innerText = data.score + '%';
+
+                // Update Stats
+                totalCount++;
+                if(data.status === 'danger') highRiskCount++;
+                document.getElementById('stat-total').innerText = totalCount;
+                document.getElementById('stat-high').innerText = highRiskCount;
+
+                updateLog(amt, data);
+                
+            } catch (e) {
+                alert("Model not ready. Check docker logs.");
+            } finally {
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('result-box').style.opacity = '1';
+                amtInput.value = '';
+            }
+        }
+
+        function updateLog(amt, data) {
+            const logBody = document.getElementById('logBody');
+            const emptyMsg = document.getElementById('emptyMsg');
+            if(emptyMsg) emptyMsg.remove();
+
+            const timeStr = new Date().toLocaleTimeString();
+            const row = logBody.insertRow(0);
+            row.innerHTML = `
+                <td class="text-muted small">${timeStr}</td>
+                <td class="fw-bold">$${parseFloat(amt).toLocaleString()}</td>
+                <td><span class="status-pill bg-${data.status}">${data.risk}</span></td>
+                <td class="text-primary fw-bold">${data.score}%</td>
+            `;
+        }
+
+        function downloadCSV() {
+            const rows = document.querySelectorAll("#auditLog tr");
+            let csv = "Timestamp,Amount,Risk,Confidence\n";
+            rows.forEach((row, i) => {
+                if(i === 0) return;
+                const cols = row.querySelectorAll("td");
+                if(cols.length) {
+                    const line = Array.from(cols).map(c => `"${c.innerText.replace(/[$,]/g, '')}"`).join(",");
+                    csv += line + "\n";
+                }
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Risk_Audit_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+        }
+
+        function clearLog() {
+            if(confirm("Clear all session history?")) {
+                location.reload();
+            }
+        }
+    </script>
+</body>
+</html>

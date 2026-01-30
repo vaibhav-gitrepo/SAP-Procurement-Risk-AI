@@ -1,0 +1,17 @@
+# Credentials & Secrets
+.env
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Machine Learning Model
+*.pkl
+
+# Docker
+.dockerload/
+
+# OS Files
+.DS_Store
+Thumbs.db
