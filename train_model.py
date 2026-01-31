@@ -1,45 +1,51 @@
+import pandas as pd
+from sqlalchemy import create_engine, inspect
+import joblib
 import os
 import time
-import pandas as pd
-import joblib
-from sqlalchemy import create_engine
-from sklearn.ensemble import GradientBoostingClassifier
-from dotenv import load_dotenv
 
-load_dotenv()
-
-
-def run_training():
-    conn_string = os.getenv("DATABASE_URL").replace("postgres://", "postgresql://", 1)
-    engine = create_engine(conn_string, connect_args={"sslmode": "require"})
+def train_risk_model():
+    db_url = os.getenv("DATABASE_URL").replace("postgres://", "postgresql://", 1)
+    engine = create_engine(db_url)
     
-    df = pd.DataFrame()
-    try:
-        df = pd.read_sql('SELECT "OrderAmount", "RiskLabel" FROM purchase_orders', engine)
-    except:
+    table_name = 'sap_po_data'
+    df = None
+    
+    print(f"⏳ Waiting for table '{table_name}' to appear in Render DB...")
+    
+    # Retry loop: 10 attempts, 5 seconds apart (Total 50 seconds)
+    for i in range(10):
+        try:
+            # Use inspector to check if table exists before querying
+            inspector = inspect(engine)
+            if table_name in inspector.get_table_names():
+                query = f"SELECT amount_usd, risk_label FROM {table_name}"
+                df = pd.read_sql(query, engine)
+                if not df.empty:
+                    print(f"✅ Found table! Loaded {len(df)} rows.")
+                    break
+            else:
+                print(f"⚠️ Attempt {i+1}: Table not found yet...")
+        except Exception as e:
+            print(f"⚠️ Attempt {i+1}: Database busy...")
+        
+        time.sleep(5)
+
+    if df is None:
+        print("❌ FATAL: Table never appeared. Check Ingest service logs.")
         return
 
-    if df.empty: return
-
-    # 🛠️ FIX: Ensure we have both classes (0 and 1) for the model to work
-    if df['RiskLabel'].nunique() < 2:
-        print("⚠️ Data imbalance detected. Injecting synthetic edge cases for model stability...")
-        synthetic_data = pd.DataFrame({
-            'OrderAmount': [100.0, 10000.0],
-            'RiskLabel': [0, 1]
-        })
-        df = pd.concat([df, synthetic_data], ignore_index=True)
-
-    X = df[['OrderAmount']]
-    y = df['RiskLabel']
+    # Train Logic
+    from sklearn.ensemble import GradientBoostingClassifier
+    X = df[['amount_usd']]
+    y = df['risk_label']
     
-    print(f"🧠 Training High-Performance Model on {len(df)} samples...")
-    model = GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, max_depth=3)
+    model = GradientBoostingClassifier(n_estimators=100)
     model.fit(X, y)
     
-    model.feature_names_in_ = ['OrderAmount']
-    joblib.dump(model, 'vendor_risk_model.pkl')
-    print("🎯 SUCCESS: Model trained and saved.")
+    os.makedirs('models', exist_ok=True)
+    joblib.dump(model, 'models/vendor_risk_model.pkl')
+    print("✅ AI Model Trained successfully.")
 
 if __name__ == "__main__":
-    run_training()
+    train_risk_model()

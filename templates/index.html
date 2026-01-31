@@ -2,110 +2,95 @@
 <html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAP Global Risk Intel</title>
+    <title>SAP AI Risk Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
     <style>
         :root { 
-            --sap-blue: #0070f2; 
-            --sap-dark: #2c3e50; 
+            --sap-blue: #0070f2; --sap-dark: #1a1a1a; 
             --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            --card-bg: rgba(255, 255, 255, 0.95);
-            --text-main: #2c3e50;
-            --border-color: rgba(0,0,0,0.1);
+            --card-bg: rgba(255, 255, 255, 0.9); --text-main: #1a202c; --text-muted: #4a5568;
         }
-
         [data-theme="dark"] {
-            --sap-dark: #111111;
-            --bg-gradient: linear-gradient(135deg, #0f0f0f 0%, #1c1e22 100%);
-            --card-bg: rgba(33, 37, 41, 0.95);
-            --text-main: #f8f9fa;
-            --border-color: rgba(255,255,255,0.1);
+            --sap-dark: #050505; --bg-gradient: linear-gradient(135deg, #0f172a 0%, #111827 100%);
+            --card-bg: rgba(30, 41, 59, 0.8); --text-main: #ffffff; --text-muted: #cbd5e1;
         }
-        
-        body { 
-            background: var(--bg-gradient); 
-            color: var(--text-main);
-            min-height: 100vh; 
-            transition: background 0.3s ease;
-        }
-
-        .sap-header { background: var(--sap-dark); color: white; padding: 1rem 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .glass-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; backdrop-filter: blur(10px); }
-        .form-control, .form-select, .input-group-text { background-color: var(--card-bg); color: var(--text-main); border: 1px solid var(--border-color); }
-        .status-pill { padding: 5px 15px; border-radius: 20px; color: white; font-size: 0.8rem; font-weight: bold; }
+        body { background: var(--bg-gradient); color: var(--text-main); min-height: 100vh; transition: 0.3s; padding-bottom: 50px; }
+        .sap-header { background: var(--sap-dark); color: white; padding: 1rem 2rem; border-bottom: 3px solid var(--sap-blue); }
+        .glass-card { background: var(--card-bg); border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; backdrop-filter: blur(15px); transition: 0.3s; }
+        .block-title { color: var(--text-main) !important; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+        .status-pill { padding: 5px 12px; border-radius: 50px; color: white; font-size: 0.75rem; font-weight: bold; }
+        .btn-refresh { background: var(--sap-blue); color: white; border-radius: 8px; border: none; font-weight: bold; }
+        .btn-refresh:disabled { opacity: 0.6; cursor: not-allowed; }
     </style>
-
-    <script>
-        // Theme Toggle Logic
-        function toggleTheme() {
-            const checkbox = document.getElementById('darkModeToggle');
-            const theme = checkbox.checked ? 'dark' : 'light';
-            document.documentElement.setAttribute('data-theme', theme);
-            localStorage.setItem('sap-theme', theme);
-        }
-
-        // Apply theme immediately on head load
-        if (localStorage.getItem('sap-theme') === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
-        }
-    </script>
 </head>
 <body>
-
-    <header class="sap-header d-flex justify-content-between align-items-center">
-        <h3 class="mb-0">Global Procurement Intel</h3>
-        <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" id="darkModeToggle" onchange="toggleTheme()">
-            <label class="form-check-label small text-white" for="darkModeToggle">🌙 Dark Mode</label>
+    <header class="sap-header d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0 fw-bold">Global Procurement Intel</h4>
+        <div class="d-flex align-items-center gap-3">
+            <button id="refreshBtn" onclick="triggerRefresh()" class="btn btn-refresh btn-sm px-3 py-2">
+                <span id="refreshText">🔄 SYNC SAP DATA</span>
+            </button>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="darkModeToggle" onchange="toggleTheme()">
+            </div>
         </div>
     </header>
 
-    <div class="container mt-5">
+    <div class="container">
+        <div class="row mb-4 g-3">
+            <div class="col-md-4">
+                <div class="card glass-card p-3 text-center">
+                    <small class="fw-bold text-muted">TOTAL RECORDS</small>
+                    <h3 id="stat-total" class="fw-bold mb-0">--</h3>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card glass-card p-3 text-center border-start border-danger border-4">
+                    <small class="fw-bold text-muted text-danger">HIGH RISK ALERTS</small>
+                    <h3 id="stat-high" class="fw-bold mb-0 text-danger">--</h3>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card glass-card p-3 text-center border-start border-primary border-4">
+                    <small class="fw-bold text-muted text-primary">AI MODEL</small>
+                    <h3 class="fw-bold mb-0 text-primary" style="font-size: 1.2rem;">Ready (GBM)</h3>
+                </div>
+            </div>
+        </div>
+
         <div class="row g-4">
             <div class="col-md-5">
-                <div class="card glass-card p-4 shadow-sm">
-                    <h5 class="text-muted mb-4 text-uppercase fw-bold">Risk Analysis</h5>
-                    
+                <div class="card glass-card p-4 h-100">
+                    <h5 class="block-title mb-4">Risk Analysis</h5>
                     <div class="mb-3">
-                        <label class="small fw-bold">CURRENCY SELECT</label>
-                        <select id="currency" class="form-select" onchange="updateSymbol()">
-                            <option value="USD">USD - US Dollar ($)</option>
-                            <option value="INR">INR - Indian Rupee (₹)</option>
+                        <label class="small fw-bold text-muted mb-2">CURRENCY</label>
+                        <select id="currency" class="form-select" onchange="updateSym()">
+                            <option value="USD">USD ($)</option>
+                            <option value="INR">INR (₹)</option>
                         </select>
                     </div>
-
                     <div class="mb-4">
-                        <label class="small fw-bold">ORDER AMOUNT</label>
-                        <div class="input-group input-group-lg">
-                            <span class="input-group-text" id="sym">$</span>
-                            <input type="number" id="amount" class="form-control" placeholder="0.00">
-                        </div>
+                        <label class="small fw-bold text-muted mb-2">AMOUNT</label>
+                        <input type="number" id="amount" class="form-control form-control-lg" placeholder="0.00">
                     </div>
-
-                    <button onclick="runAnalysis()" class="btn btn-primary btn-lg w-100 py-3">PREDICT RISK</button>
-                    
+                    <button onclick="runAnalysis()" class="btn btn-primary btn-lg w-100 fw-bold">PREDICT RISK</button>
                     <div id="result-area" class="mt-4 text-center" style="display:none;">
-                        <div id="risk-badge" class="badge p-3 w-100 mb-2" style="font-size: 1.2rem;"></div>
-                        <small id="conv-info" class="text-muted"></small>
+                        <div id="risk-badge" class="badge p-3 w-100 mb-2"></div>
+                        <small id="conv-info" class="fw-bold" style="color: var(--text-muted) !important;"></small>
                     </div>
                 </div>
             </div>
 
             <div class="col-md-7">
-                <div class="card glass-card p-4 shadow-sm h-100">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5 class="text-muted text-uppercase fw-bold">Risk Audit Log</h5>
-                        <button class="btn btn-sm btn-outline-primary" onclick="exportCSV()">EXPORT CSV</button>
-                    </div>
+                <div class="card glass-card p-4 h-100">
+                    <h5 class="block-title mb-4">Risk Audit Log</h5>
                     <div class="table-responsive">
-                        <table class="table" id="logTable">
-                            <thead>
-                                <tr><th>TIME</th><th>AMOUNT</th><th>CURRENCY</th><th>RISK</th></tr>
+                        <table class="table table-borderless">
+                            <thead class="border-bottom">
+                                <tr class="text-muted small"><th>TIME</th><th>AMOUNT</th><th>RISK</th></tr>
                             </thead>
                             <tbody id="logBody">
-                                <tr><td colspan="4" class="text-center text-muted py-5">Enter a value to begin analysis.</td></tr>
+                                <tr><td colspan="3" class="text-center py-5 text-muted">No analysis yet.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -115,74 +100,71 @@
     </div>
 
     <script>
-        function updateSymbol() {
-            const curr = document.getElementById('currency').value;
-            document.getElementById('sym').innerText = curr === 'INR' ? '₹' : '$';
+        function toggleTheme() {
+            const theme = document.getElementById('darkModeToggle').checked ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('sap-theme', theme);
+        }
+
+        async function updateStats() {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+            document.getElementById('stat-total').innerText = data.total.toLocaleString();
+            document.getElementById('stat-high').innerText = data.high_risk.toLocaleString();
+        }
+
+        async function triggerRefresh() {
+            const btn = document.getElementById('refreshBtn');
+            const txt = document.getElementById('refreshText');
+            btn.disabled = true;
+            txt.innerText = "⏳ SYNCING & TRAINING...";
+            
+            try {
+                const res = await fetch('/api/refresh', { method: 'POST' });
+                const data = await res.json();
+                alert(data.message);
+                updateStats();
+            } catch (e) {
+                alert("Refresh failed. Check server logs.");
+            } finally {
+                btn.disabled = false;
+                txt.innerText = "🔄 SYNC SAP DATA";
+            }
         }
 
         async function runAnalysis() {
             const amt = document.getElementById('amount').value;
             const curr = document.getElementById('currency').value;
-            if(!amt || amt <= 0) return alert("Please enter a valid amount");
+            if(!amt) return;
 
-            try {
-                const res = await fetch('/predict', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ amount: amt, currency: curr })
-                });
-                const data = await res.json();
-                
-                // Show Result
-                document.getElementById('result-area').style.display = 'block';
-                const badge = document.getElementById('risk-badge');
-                badge.className = `badge p-3 w-100 bg-${data.status}`;
-                badge.innerText = `RESULT: ${data.risk}`;
-                
-                if(curr === 'INR') {
-                    document.getElementById('conv-info').innerText = `Normalized: $${data.normalized_val} (Rate: ${data.rate_used.toFixed(4)})`;
-                } else {
-                    document.getElementById('conv-info').innerText = "";
-                }
-
-                addToLog(amt, curr, data);
-            } catch (err) {
-                alert("Server Error. Ensure Flask is running.");
-            }
-        }
-
-        function addToLog(amt, curr, data) {
-            const body = document.getElementById('logBody');
-            if(body.innerText.includes("Enter a value")) body.innerHTML = "";
-            const row = body.insertRow(0);
-            const sym = curr === 'INR' ? '₹' : '$';
-            row.innerHTML = `
-                <td class="small">${new Date().toLocaleTimeString()}</td>
-                <td class="fw-bold">${sym}${parseFloat(amt).toLocaleString()}</td>
-                <td>${curr}</td>
-                <td><span class="status-pill bg-${data.status}">${data.risk}</span></td>
-            `;
-        }
-
-        function exportCSV() {
-            let csv = "Time,Amount,Currency,Risk\n";
-            document.querySelectorAll("#logBody tr").forEach(tr => {
-                const cols = tr.querySelectorAll("td");
-                if(cols.length > 1) {
-                    csv += `"${cols[0].innerText}","${cols[1].innerText.replace(/[^0-9.]/g, '')}","${cols[2].innerText}","${cols[3].innerText}"\n`;
-                }
+            const res = await fetch('/predict', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ amount: amt, currency: curr })
             });
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'audit_log.csv'; a.click();
+            const data = await res.json();
+            
+            document.getElementById('result-area').style.display = 'block';
+            const badge = document.getElementById('risk-badge');
+            badge.className = `badge p-3 w-100 mb-2 bg-${data.status}`;
+            badge.innerText = data.risk;
+            
+            document.getElementById('conv-info').innerText = curr === 'INR' ? 
+                `Normalized: $${data.normalized_val} (Rate: ${data.rate_used})` : "Direct USD Analysis";
+
+            const body = document.getElementById('logBody');
+            if(body.innerText.includes("No analysis")) body.innerHTML = "";
+            const row = body.insertRow(0);
+            row.innerHTML = `<td>${new Date().toLocaleTimeString()}</td><td>${curr} ${amt}</td>
+                             <td><span class="status-pill bg-${data.status}">${data.risk.split(' ')[0]}</span></td>`;
         }
 
         window.onload = () => {
             if (localStorage.getItem('sap-theme') === 'dark') {
                 document.getElementById('darkModeToggle').checked = true;
+                toggleTheme();
             }
-            updateSymbol();
+            updateStats();
         }
     </script>
 </body>

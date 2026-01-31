@@ -1,4 +1,3 @@
-
 services:
   ingest_data:
     build: .
@@ -6,11 +5,11 @@ services:
     command: python ingest_sap_data.py
     env_file: .env
     volumes:
-      - .:/app  # 👈 Crucial: Links your project folder to the container
+      - .:/app 
     dns:
       - 8.8.8.8
-    extra_hosts:
-      - "db.urznazjgyntqoncrctiv.supabase.co:13.235.151.19"
+    # Adding a timeout for the container itself
+    stop_grace_period: 10s
     networks:
       - sap-net
 
@@ -20,13 +19,12 @@ services:
     command: python train_model.py
     env_file: .env
     volumes:
-      - .:/app  # 👈 Crucial: Allows the model file to be written to your disk
+      - .:/app 
     dns:
       - 8.8.8.8
-    extra_hosts:
-      - "db.urznazjgyntqoncrctiv.supabase.co:13.235.151.19"
     depends_on:
-      - ingest_data
+      ingest_data:
+        condition: service_started 
     networks:
       - sap-net
 
@@ -35,14 +33,14 @@ services:
     container_name: sap_intel_app
     command: python app.py
     volumes:
-      - .:/app  # 👈 Crucial: Allows the web app to read the model file
+      - .:/app 
     ports:
       - "5000:5000"
     env_file: .env
     dns:
       - 8.8.8.8
-    extra_hosts:
-      - "db.urznazjgyntqoncrctiv.supabase.co:13.235.151.19"
+    depends_on:
+      - ingest_data 
     networks:
       - sap-net
 
