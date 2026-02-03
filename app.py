@@ -1,85 +1,60 @@
-import os
-import joblib
-import pandas as pd
-import requests
-import subprocess
-from flask import Flask, request, jsonify, render_template
+import os, joblib, pandas as pd, datetime, io
+from flask import Flask, request, jsonify, render_template, Response
 from sqlalchemy import create_engine, text
 
 app = Flask(__name__)
-
-# Render Database URL Fix
-def get_db_url():
-    url = os.getenv("DATABASE_URL", "sqlite:///fallback.db")
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    return url
-
-# Load AI Model
+DB_URL = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://", 1)
 MODEL_PATH = 'models/vendor_risk_model.pkl'
 
-def load_model():
-    if os.path.exists(MODEL_PATH):
-        return joblib.load(MODEL_PATH)
-    return None
-
 @app.route('/')
-def index():
-    return render_template('index.html')
+def index(): return render_template('index.html')
 
 @app.route('/api/stats')
 def get_stats():
-    engine = create_engine(get_db_url())
-    try:
-        with engine.connect() as conn:
-            total = conn.execute(text("SELECT COUNT(*) FROM sap_po_data")).scalar()
-            high_risk = conn.execute(text("SELECT COUNT(*) FROM sap_po_data WHERE risk_label = 1")).scalar()
-        return jsonify({"total": total or 0, "high_risk": high_risk or 0})
-    except Exception:
-        return jsonify({"total": 0, "high_risk": 0})
+    engine = create_engine(DB_URL)
+    with engine.connect() as conn:
+        total = conn.execute(text("SELECT COUNT(*) FROM automated_audit_log")).scalar() or 0
+        high = conn.execute(text("SELECT COUNT(*) FROM automated_audit_log WHERE risk_label = 1")).scalar() or 0
+        avg_v = conn.execute(text("SELECT AVG(vendor_score) FROM automated_audit_log")).scalar() or 0
+    return jsonify({"total": total, "high_risk": high, "avg_v": round(float(avg_v), 1)})
 
-@app.route('/api/refresh', methods=['POST'])
-def refresh_system():
-    try:
-        # 1. Run Ingest Script
-        subprocess.run(["python", "ingest_sap_data.py"], check=True)
-        # 2. Run Train Script
-        subprocess.run(["python", "train_model.py"], check=True)
-        
-        # Reload model into memory
-        global model
-        model = load_model()
-        
-        return jsonify({"status": "success", "message": "System synchronized and model retrained."})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+@app.route('/api/auto-feed')
+def get_auto_feed():
+    engine = create_engine(DB_URL)
+    df = pd.read_sql("SELECT * FROM automated_audit_log ORDER BY created_at DESC LIMIT 50", engine)
+    return jsonify(df.to_dict(orient='records'))
+
+@app.route('/api/export-csv')
+def export_csv():
+    engine = create_engine(DB_URL)
+    df = pd.read_sql("SELECT * FROM automated_audit_log ORDER BY created_at DESC", engine)
+    output = io.StringIO()
+    df.to_csv(output, index=False)
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-disposition": "attachment; filename=sap_sandbox_audit.csv"})
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    model = load_model()
-    if not model:
-        return jsonify({"risk": "Model Error", "status": "secondary"}), 500
-
+    model = joblib.load(MODEL_PATH)
     data = request.json
-    raw_amount = float(data.get('amount'))
-    currency = data.get('currency')
-
-    # Simple Mock Exchange Rate logic
-    rate = 83.0 if currency == 'INR' else 1.0
-    normalized_amount = raw_amount / rate
-
-    # AI Prediction
-    input_df = pd.DataFrame([[normalized_amount]], columns=['amount_usd'])
-    prediction = model.predict(input_df)[0]
-    proba = model.predict_proba(input_df)[0]
-    confidence = max(proba)
-
-    return jsonify({
-        "risk": f"{'High Risk' if prediction == 1 else 'Low Risk'} ({int(confidence*100)}%)",
-        "status": 'danger' if prediction == 1 else 'success',
-        "normalized_val": round(normalized_amount, 2),
-        "rate_used": rate
-    })
+    raw_amt = float(data.get('amount'))
+    curr = data.get('currency')
+    amt_usd = raw_amt / 83.0 if curr == 'INR' else raw_amt
+    score = float(data.get('vendor_score'))
+    
+    features = pd.DataFrame([[amt_usd, score]], columns=['amount_usd', 'vendor_score'])
+    pred = int(model.predict(features)[0])
+    conf = max(model.predict_proba(features)[0])
+    
+    # Save manual check to DB
+    engine = create_engine(DB_URL)
+    pd.DataFrame([{
+        'po_number': 'MANUAL_CHK', 'amount_usd': round(amt_usd, 2),
+        'vendor_score': score, 'risk_label': pred,
+        'suggestion': f"Manual {curr} Check: {amt_usd}",
+        'created_at': datetime.datetime.now()
+    }]).to_sql('automated_audit_log', engine, if_exists='append', index=False)
+    
+    return jsonify({"risk": "High Risk" if pred==1 else "Low Risk", "status": 'danger' if pred==1 else 'success', "confidence": f"{int(conf*100)}%"})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

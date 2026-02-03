@@ -1,97 +1,80 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <title>SAP AI Risk Dashboard</title>
+    <title>SAP PO RISK Auditor - Sandbox </title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root { 
-            --sap-blue: #0070f2; --sap-dark: #1a1a1a; 
-            --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            --card-bg: rgba(255, 255, 255, 0.9); --text-main: #1a202c; --text-muted: #4a5568;
+        :root { --bg: #0f172a; --text: #f8fafc; --card: rgba(30,41,59,0.8); }
+        [data-theme="light"] { --bg: #f8fafc; --text: #1e293b; --card: #ffffff; }
+        body { background: var(--bg); color: var(--text); transition: 0.3s; font-family: 'Segoe UI', sans-serif; }
+        .glass-card { background: var(--card); border-radius: 12px; padding: 25px; border: 1px solid rgba(128,128,128,0.2); }
+        
+        /* High Visibility Inputs: Force white background and black text regardless of theme */
+        .high-vis-input { 
+            background-color: #ffffff !important; 
+            color: #000000 !important; 
+            border: 2px solid #0070f2 !important;
+            font-weight: bold;
+            height: 45px;
         }
-        [data-theme="dark"] {
-            --sap-dark: #050505; --bg-gradient: linear-gradient(135deg, #0f172a 0%, #111827 100%);
-            --card-bg: rgba(30, 41, 59, 0.8); --text-main: #ffffff; --text-muted: #cbd5e1;
-        }
-        body { background: var(--bg-gradient); color: var(--text-main); min-height: 100vh; transition: 0.3s; padding-bottom: 50px; }
-        .sap-header { background: var(--sap-dark); color: white; padding: 1rem 2rem; border-bottom: 3px solid var(--sap-blue); }
-        .glass-card { background: var(--card-bg); border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; backdrop-filter: blur(15px); transition: 0.3s; }
-        .block-title { color: var(--text-main) !important; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
-        .status-pill { padding: 5px 12px; border-radius: 50px; color: white; font-size: 0.75rem; font-weight: bold; }
-        .btn-refresh { background: var(--sap-blue); color: white; border-radius: 8px; border: none; font-weight: bold; }
-        .btn-refresh:disabled { opacity: 0.6; cursor: not-allowed; }
+        .high-vis-input:focus { box-shadow: 0 0 10px rgba(0,112,242,0.5); }
     </style>
 </head>
 <body>
-    <header class="sap-header d-flex justify-content-between align-items-center mb-4">
-        <h4 class="mb-0 fw-bold">Global Procurement Intel</h4>
-        <div class="d-flex align-items-center gap-3">
-            <button id="refreshBtn" onclick="triggerRefresh()" class="btn btn-refresh btn-sm px-3 py-2">
-                <span id="refreshText">🔄 SYNC SAP DATA</span>
-            </button>
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="darkModeToggle" onchange="toggleTheme()">
-            </div>
+    <nav class="navbar navbar-dark bg-dark px-4 border-bottom border-primary mb-4">
+        <span class="navbar-brand fw-bold">SAP SANDBOX AUDITOR</span>
+        <div class="d-flex gap-3">
+            <button onclick="toggleHighRiskFilter()" id="filterBtn" class="btn btn-outline-danger btn-sm">🚨 FILTER HIGH RISK</button>
+            <a href="/api/export-csv" class="btn btn-success btn-sm fw-bold">📥 DOWNLOAD REPORT</a>
+            <button onclick="toggleTheme()" class="btn btn-outline-light btn-sm">THEME</button>
         </div>
-    </header>
+    </nav>
 
     <div class="container">
-        <div class="row mb-4 g-3">
-            <div class="col-md-4">
-                <div class="card glass-card p-3 text-center">
-                    <small class="fw-bold text-muted">TOTAL RECORDS</small>
-                    <h3 id="stat-total" class="fw-bold mb-0">--</h3>
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="glass-card">
+                    <h6 class="fw-bold mb-3">Manual Prediction Simulator</h6>
+                    <div class="mb-3">
+                        <label class="small fw-bold text-uppercase">Currency Selection</label>
+                        <select id="curr" class="form-select high-vis-input">
+                            <option value="USD">USD ($) - US Dollar</option>
+                            <option value="INR">INR (₹) - Indian Rupee</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small fw-bold text-uppercase">Enter Amount</label>
+                        <input type="number" id="amt" class="form-control high-vis-input" placeholder="e.g. 15000">
+                    </div>
+                    <div class="mb-4">
+                        <label class="small fw-bold">VENDOR SCORE: <span id="vVal" class="text-primary">80</span>%</label>
+                        <input type="range" id="vscore" class="form-range" oninput="vVal.innerText=this.value">
+                    </div>
+                    <button onclick="runPredict()" class="btn btn-primary w-100 fw-bold">PREDICT RISK</button>
+                    <div id="manualRes" class="mt-3 p-3 rounded text-center d-none fw-bold"></div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card glass-card p-3 text-center border-start border-danger border-4">
-                    <small class="fw-bold text-muted text-danger">HIGH RISK ALERTS</small>
-                    <h3 id="stat-high" class="fw-bold mb-0 text-danger">--</h3>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card glass-card p-3 text-center border-start border-primary border-4">
-                    <small class="fw-bold text-muted text-primary">AI MODEL</small>
-                    <h3 class="fw-bold mb-0 text-primary" style="font-size: 1.2rem;">Ready (GBM)</h3>
+
+            <div class="col-lg-8">
+                <div class="glass-card" style="height: 420px;">
+                    <h6 class="fw-bold">Risk Trend (Latest SAP Sandbox POs)</h6>
+                    <canvas id="riskChart"></canvas>
                 </div>
             </div>
         </div>
 
-        <div class="row g-4">
-            <div class="col-md-5">
-                <div class="card glass-card p-4 h-100">
-                    <h5 class="block-title mb-4">Risk Analysis</h5>
-                    <div class="mb-3">
-                        <label class="small fw-bold text-muted mb-2">CURRENCY</label>
-                        <select id="currency" class="form-select" onchange="updateSym()">
-                            <option value="USD">USD ($)</option>
-                            <option value="INR">INR (₹)</option>
-                        </select>
-                    </div>
-                    <div class="mb-4">
-                        <label class="small fw-bold text-muted mb-2">AMOUNT</label>
-                        <input type="number" id="amount" class="form-control form-control-lg" placeholder="0.00">
-                    </div>
-                    <button onclick="runAnalysis()" class="btn btn-primary btn-lg w-100 fw-bold">PREDICT RISK</button>
-                    <div id="result-area" class="mt-4 text-center" style="display:none;">
-                        <div id="risk-badge" class="badge p-3 w-100 mb-2"></div>
-                        <small id="conv-info" class="fw-bold" style="color: var(--text-muted) !important;"></small>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-7">
-                <div class="card glass-card p-4 h-100">
-                    <h5 class="block-title mb-4">Risk Audit Log</h5>
-                    <div class="table-responsive">
-                        <table class="table table-borderless">
-                            <thead class="border-bottom">
-                                <tr class="text-muted small"><th>TIME</th><th>AMOUNT</th><th>RISK</th></tr>
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="glass-card mb-5">
+                    <h6 class="fw-bold mb-3">📋 GLOBAL AUDIT TRAIL</h6>
+                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                        <table class="table table-hover align-middle">
+                            <thead class="small text-muted sticky-top bg-dark">
+                                <tr><th>DATE</th><th>PO SOURCE</th><th>AMT (USD)</th><th>SCORE</th><th>STATUS</th><th>AI ANALYSIS</th></tr>
                             </thead>
-                            <tbody id="logBody">
-                                <tr><td colspan="3" class="text-center py-5 text-muted">No analysis yet.</td></tr>
-                            </tbody>
+                            <tbody id="auditBody"></tbody>
                         </table>
                     </div>
                 </div>
@@ -100,72 +83,84 @@
     </div>
 
     <script>
+        let allData = [];
+        let highRiskOnly = false;
+        let myChart;
+
         function toggleTheme() {
-            const theme = document.getElementById('darkModeToggle').checked ? 'dark' : 'light';
-            document.documentElement.setAttribute('data-theme', theme);
-            localStorage.setItem('sap-theme', theme);
+            const current = document.documentElement.getAttribute('data-theme');
+            document.documentElement.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
         }
 
-        async function updateStats() {
-            const res = await fetch('/api/stats');
-            const data = await res.json();
-            document.getElementById('stat-total').innerText = data.total.toLocaleString();
-            document.getElementById('stat-high').innerText = data.high_risk.toLocaleString();
+        function toggleHighRiskFilter() {
+            highRiskOnly = !highRiskOnly;
+            const btn = document.getElementById('filterBtn');
+            btn.innerText = highRiskOnly ? "❌ SHOW ALL" : "🚨 FILTER HIGH RISK";
+            btn.className = highRiskOnly ? "btn btn-danger btn-sm" : "btn btn-outline-danger btn-sm";
+            renderTable();
         }
 
-        async function triggerRefresh() {
-            const btn = document.getElementById('refreshBtn');
-            const txt = document.getElementById('refreshText');
-            btn.disabled = true;
-            txt.innerText = "⏳ SYNCING & TRAINING...";
-            
-            try {
-                const res = await fetch('/api/refresh', { method: 'POST' });
-                const data = await res.json();
-                alert(data.message);
-                updateStats();
-            } catch (e) {
-                alert("Refresh failed. Check server logs.");
-            } finally {
-                btn.disabled = false;
-                txt.innerText = "🔄 SYNC SAP DATA";
-            }
+        async function updateData() {
+            const res = await fetch('/api/auto-feed');
+            allData = await res.json();
+            renderTable();
+            updateChart();
         }
 
-        async function runAnalysis() {
-            const amt = document.getElementById('amount').value;
-            const curr = document.getElementById('currency').value;
-            if(!amt) return;
+        function renderTable() {
+            const displayData = highRiskOnly ? allData.filter(d => d.risk_label === 1) : allData;
+            document.getElementById('auditBody').innerHTML = displayData.map(row => `
+                <tr class="${row.risk_label ? 'table-danger' : ''}">
+                    <td class="small">${new Date(row.created_at).toLocaleTimeString()}</td>
+                    <td><span class="badge ${row.po_number === 'MANUAL_CHK' ? 'bg-secondary' : 'bg-primary'}">${row.po_number}</span></td>
+                    <td>$${row.amount_usd.toLocaleString()}</td>
+                    <td>${row.vendor_score}%</td>
+                    <td><span class="badge bg-${row.risk_label ? 'danger' : 'success'}">${row.risk_label ? 'HIGH' : 'LOW'}</span></td>
+                    <td class="small">${row.suggestion}</td>
+                </tr>
+            `).join('');
+        }
 
-            const res = await fetch('/predict', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ amount: amt, currency: curr })
+        function updateChart() {
+            const ctx = document.getElementById('riskChart').getContext('2d');
+            const recent = allData.slice(0, 10).reverse();
+            if(myChart) myChart.destroy();
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: recent.map(d => d.po_number),
+                    datasets: [{ 
+                        label: 'Risk Level (0=Low, 1=High)', 
+                        data: recent.map(d => d.risk_label), 
+                        borderColor: '#0070f2', 
+                        backgroundColor: 'rgba(0, 112, 242, 0.2)',
+                        fill: true,
+                        tension: 0.4 
+                    }]
+                },
+                options: { maintainAspectRatio: false }
             });
-            const data = await res.json();
-            
-            document.getElementById('result-area').style.display = 'block';
-            const badge = document.getElementById('risk-badge');
-            badge.className = `badge p-3 w-100 mb-2 bg-${data.status}`;
-            badge.innerText = data.risk;
-            
-            document.getElementById('conv-info').innerText = curr === 'INR' ? 
-                `Normalized: $${data.normalized_val} (Rate: ${data.rate_used})` : "Direct USD Analysis";
-
-            const body = document.getElementById('logBody');
-            if(body.innerText.includes("No analysis")) body.innerHTML = "";
-            const row = body.insertRow(0);
-            row.innerHTML = `<td>${new Date().toLocaleTimeString()}</td><td>${curr} ${amt}</td>
-                             <td><span class="status-pill bg-${data.status}">${data.risk.split(' ')[0]}</span></td>`;
         }
 
-        window.onload = () => {
-            if (localStorage.getItem('sap-theme') === 'dark') {
-                document.getElementById('darkModeToggle').checked = true;
-                toggleTheme();
-            }
-            updateStats();
+        async function runPredict() {
+            const r = await fetch('/predict', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({
+                    amount: document.getElementById('amt').value, 
+                    currency: document.getElementById('curr').value, 
+                    vendor_score: document.getElementById('vscore').value
+                }) 
+            });
+            const d = await r.json();
+            const res = document.getElementById('manualRes');
+            res.className = `mt-3 p-3 rounded text-center bg-${d.status} text-white d-block`;
+            res.innerHTML = `RESULT: ${d.risk} (${d.confidence})`;
+            updateData();
         }
+
+        window.onload = updateData;
+        setInterval(updateData, 30000); // Auto-refresh UI every 30 seconds
     </script>
 </body>
 </html>
