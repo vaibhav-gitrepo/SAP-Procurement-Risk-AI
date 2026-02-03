@@ -6,24 +6,24 @@ An end-to-end AI-powered system that ingests live data from the **SAP S/4HANA Sa
 
 ## 🏗️ System Architecture
 
-The project is divided into three primary microservices orchestrated via Docker:
-
-1.  **`sap_ingest_service`**: Connects to SAP, flattens complex OData structures, and syncs them to the PostgreSQL database.
-2.  **`sap_train_service`**: Reads historical data, handles data imbalances through synthetic injection, and exports the `vendor_risk_model.pkl`.
-3.  **`sap_intel_app`**: The Flask web server providing the UI and the `/predict` API, featuring live Forex integration.
+The project is structured as a microservices ecosystem orchestrated via Docker, ensuring seamless data flow from SAP to the end-user dashboard.
 
 
+
+1.  **`sap_scheduler_service`**: The heartbeat of the system. It connects to the **SAP Business Accelerator Hub Sandbox** every 5 minutes, pulls real Purchase Order data using OData v2 protocols, and performs AI risk inference.
+2.  **`sap_ingest_service`**: Initializes the database schema and performs the primary ingestion of baseline vendor reliability data.
+3.  **`sap_train_service`**: Prepares the intelligence layer. It trains a **Gradient Boosting Classifier** on normalized USD amounts and vendor scores, exporting a production-ready `vendor_risk_model.pkl`.
+4.  **`sap_intel_app`**: The central Command Center. A Flask-based web application providing high-visibility analytics, manual risk simulation, and a persistent global audit trail.
 
 ---
 
 ## 📋 Prerequisites
 
-Before launching, ensure you have the following installed and configured:
+Before launching, ensure you have the following credentials:
 
-* **Docker Desktop**: Installed and running on your machine.
-* **SAP API Key**: Obtained from the [SAP API Business Hub](https://api.sap.com/).
-* **ExchangeRate-API Key**: A free API key from [ExchangeRate-API](https://www.exchangerate-api.com/).
-* **PostgreSQL Database**: A connection string (e.g., from Supabase, AWS RDS, or a local instance).
+* **Docker Desktop**: Installed and running.
+* **SAP API Key**: Get a free key from the [SAP Business Accelerator Hub](https://api.sap.com/).
+* **PostgreSQL Database**: A valid connection string (Render, Supabase, or AWS RDS).
 
 ---
 
@@ -36,50 +36,60 @@ Before launching, ensure you have the following installed and configured:
     ```
 
 2.  **Configure Environment Variables:**
-    Create a `.env` file in the root directory and add your credentials:
+    Create a `.env` file in the root directory:
     ```env
-    SAP_API_KEY=your_sap_key_here
-    EXCHANGE_RATE_API_KEY=your_forex_key_here
     DATABASE_URL=postgresql://user:password@host:port/dbname
+    SAP_API_KEY=your_sap_sandbox_key_here
+    SAP_SANDBOX_URL=[https://sandbox.api.sap.com/s4hanacloud/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV](https://sandbox.api.sap.com/s4hanacloud/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV)
     ```
 
 3.  **Launch the System:**
     ```bash
-    docker-compose up --build
+    docker compose up --build
     ```
 
 ---
 
-## 📊 Usage
+## 📊 Key Features & Usage
 
-* **Access the UI**: Open [http://localhost:5000](http://localhost:5000) in your web browser.
-* **Toggle Currency**: Use the dropdown to select **USD** or **INR**. The currency symbol (₹/$) will update dynamically.
-* **Run Analysis**: Enter a Purchase Order amount. The system will normalize the value using live rates and return an AI risk assessment.
-* **Theme Switch**: Click the 🌙 **Dark Mode** toggle in the header. Your preference is automatically saved across sessions.
-* **Export Data**: Use the **Export CSV** button to download a detailed report of all analyzed risks for auditing purposes.
+### 🕵️ Real-Time SAP OData Sync
+The system doesn't just use random data. It fetches live Purchase Orders from the SAP S/4HANA Sandbox. Every sync cycle applies the ML model to live data and logs the results into the **Global Audit Trail**.
+
+### 🌓 High-Visibility UI
+The UI features a dual-theme mode (Light/Dark). 
+* **High-Visibility Inputs**: The Amount and Currency fields are designed with a "Force-Light" mode, ensuring maximum readability for financial data entry regardless of the background theme.
+* **Live Risk Trend**: Interactive charts visualize the risk levels of the last 10 SAP transactions.
+
+### 🔍 Advanced Filtering & Reporting
+* **High-Risk Filter**: Toggle the `🚨 FILTER HIGH RISK` button to instantly isolate transactions flagged by the AI for manual review.
+* **Audit Persistence**: Manual predictions are tagged as `MANUAL_CHK` and saved alongside SAP data for a unified history.
+* **Export CSV**: Generate a full audit report with one click for compliance and procurement reporting.
+
+
 
 ---
 
-## 🛡️ Model Logic
+## 🛡️ Model Logic & Intelligence
 
-The intelligence core utilizes a **Gradient Boosting Machine (GBM)** algorithm. Unlike simple "if-else" rules, the GBM builds an ensemble of weak prediction trees to create a strong, high-accuracy classifier.
+The system utilizes a **Gradient Boosting Machine (GBM)**. This ensemble learning method is superior for procurement risk because it handles non-linear relationships between "Transaction Amount" and "Vendor Reliability" more effectively than standard regression.
 
-
-
-* **Normalization**: All inputs are normalized to a **USD Base**. If an INR value is entered, it is converted using the live exchange rate before the model processes the prediction.
-* **Risk Threshold**: The model identifies **High Risk** as any transaction with a normalized value exceeding **$5,000 USD**.
-* **Confidence Scoring**: The system provides a probability score (e.g., 92% confidence), allowing procurement leads to prioritize the most critical risks.
+* **Normalization**: All amounts (INR/USD) are converted to a **USD Base** before being passed to the model to ensure mathematical consistency.
+* **Feature Engineering**: The model focuses on `amount_usd` and `vendor_score` to classify transactions into two categories:
+    * **Low Risk (0)**: Pattern-consistent transactions.
+    * **High Risk (1)**: Outliers or transactions with poor vendor metrics requiring human oversight.
 
 ---
 
 ## 🛠️ Troubleshooting
 
-| Issue | Possible Cause | Solution |
+| Issue | Cause | Solution |
 | :--- | :--- | :--- |
-| **`toggleTheme` error** | JS loaded after HTML elements. | Updated code moves theme logic to `<head>` for immediate availability. |
-| **Prediction 500 Error** | `.pkl` file not generated or missing. | Ensure `sap_train_service` finished successfully. Run `docker-compose up --build` to re-trigger training. |
-| **Wrong Exchange Rate** | API Key missing or invalid. | Verify your `EXCHANGE_RATE_API_KEY` is correct in the `.env` file. |
-| **SAP Ingest Failure** | API Key or URL error. | Ensure you can reach `sandbox.api.sap.com` and your SAP key is active. |
-| **Database Connection** | SSL mode required by provider. | Append `?sslmode=require` to your `DATABASE_URL` for providers like Supabase. |
+| **"File already closed"** | Docker BuildKit race condition. | Run `docker builder prune -f` and rebuild. |
+| **SAP Connection Error** | Invalid API Key or URL. | Ensure your `SAP_API_KEY` is copied correctly from your SAP Hub profile. |
+| **Blank Audit Trail** | Database not synced yet. | Wait 30 seconds for the `sap_scheduler_service` to complete its first sync. |
+| **UI Inputs Blurry** | Theme CSS conflict. | The project uses `.high-vis-input` classes to override theme variables for inputs. |
 
 ---
+
+## 🤝 Support
+For enterprise configuration or connecting to a **Production SAP S/4HANA (On-Premise or Cloud)** instance, please update the `SAP_AUTH` parameters in `sap_sync_service.py` to support OAuth2 or Basic Auth.
