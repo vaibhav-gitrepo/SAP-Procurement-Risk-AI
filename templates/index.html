@@ -11,7 +11,6 @@
         body { background: var(--bg); color: var(--text); transition: 0.3s; font-family: 'Segoe UI', sans-serif; }
         .glass-card { background: var(--card); border-radius: 12px; padding: 25px; border: 1px solid rgba(128,128,128,0.2); }
         
-        /* High Visibility Inputs: Force white background and black text regardless of theme */
         .high-vis-input { 
             background-color: #ffffff !important; 
             color: #000000 !important; 
@@ -20,6 +19,8 @@
             height: 45px;
         }
         .high-vis-input:focus { box-shadow: 0 0 10px rgba(0,112,242,0.5); }
+        .table-responsive { border-radius: 8px; }
+        .sticky-top { z-index: 10; }
     </style>
 </head>
 <body>
@@ -72,7 +73,14 @@
                     <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                         <table class="table table-hover align-middle">
                             <thead class="small text-muted sticky-top bg-dark">
-                                <tr><th>DATE</th><th>PO SOURCE</th><th>AMT (USD)</th><th>SCORE</th><th>STATUS</th><th>AI ANALYSIS</th></tr>
+                                <tr>
+                                    <th>DATE & TIME</th>
+                                    <th>PO SOURCE</th>
+                                    <th>AMT (USD)</th>
+                                    <th>SCORE</th>
+                                    <th>STATUS</th>
+                                    <th>AI ANALYSIS & REASONING</th>
+                                </tr>
                             </thead>
                             <tbody id="auditBody"></tbody>
                         </table>
@@ -101,53 +109,91 @@
         }
 
         async function updateData() {
-            const res = await fetch('/api/auto-feed');
-            allData = await res.json();
-            renderTable();
-            updateChart();
+            try {
+                const res = await fetch('/api/auto-feed');
+                allData = await res.json();
+                renderTable();
+                updateChart();
+            } catch (e) { console.error("Data fetch failed", e); }
         }
 
         function renderTable() {
             const displayData = highRiskOnly ? allData.filter(d => d.risk_label === 1) : allData;
-            document.getElementById('auditBody').innerHTML = displayData.map(row => `
+            document.getElementById('auditBody').innerHTML = displayData.map(row => {
+                // 1. Exact Date Formatting
+                const d = new Date(row.created_at);
+                const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                // 2. PO Source & AI Reasoning Logic
+                let sourceHTML = "";
+                let aiReasoning = row.suggestion;
+
+                if (row.po_number === 'MANUAL_CHK') {
+                    sourceHTML = `<span class="badge bg-secondary">User Manual Check</span>`;
+                    aiReasoning = `<strong>[SIMULATION]</strong> User-initiated test. ${row.suggestion}`;
+                } else if (row.po_number.includes('SAP') || row.po_number.startsWith('10')) {
+                    sourceHTML = `<span class="badge bg-primary">SAP ODATA (Sandbox)</span><br><small class="text-muted">Ref: ${row.po_number}</small>`;
+                    aiReasoning = `<strong>[LIVE SAP]</strong> Production data sync. ${row.suggestion}`;
+                } else {
+                    sourceHTML = `<span class="badge bg-info text-dark">Randomly Generated</span>`;
+                    aiReasoning = `<strong>[STRESS TEST]</strong> Synthetic data entry. ${row.suggestion}`;
+                }
+
+                return `
                 <tr class="${row.risk_label ? 'table-danger' : ''}">
-                    <td class="small">${new Date(row.created_at).toLocaleTimeString()}</td>
-                    <td><span class="badge ${row.po_number === 'MANUAL_CHK' ? 'bg-secondary' : 'bg-primary'}">${row.po_number}</span></td>
-                    <td>$${row.amount_usd.toLocaleString()}</td>
-                    <td>${row.vendor_score}%</td>
-                    <td><span class="badge bg-${row.risk_label ? 'danger' : 'success'}">${row.risk_label ? 'HIGH' : 'LOW'}</span></td>
-                    <td class="small">${row.suggestion}</td>
+                    <td class="small">
+                        <div class="fw-bold">${dateStr}</div>
+                        <div class="text-muted" style="font-size: 0.75rem;">${timeStr}</div>
+                    </td>
+                    <td>${sourceHTML}</td>
+                    <td class="fw-bold">$${row.amount_usd.toLocaleString()}</td>
+                    <td>
+                        <div class="progress" style="height: 10px; width: 60px;">
+                            <div class="progress-bar" style="width: ${row.vendor_score}%"></div>
+                        </div>
+                        <small>${row.vendor_score}%</small>
+                    </td>
+                    <td><span class="badge bg-${row.risk_label ? 'danger' : 'success'}">${row.risk_label ? 'HIGH RISK' : 'LOW RISK'}</span></td>
+                    <td class="small" style="max-width: 250px;">${aiReasoning}</td>
                 </tr>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function updateChart() {
             const ctx = document.getElementById('riskChart').getContext('2d');
-            const recent = allData.slice(0, 10).reverse();
+            const recent = allData.slice(0, 15).reverse();
             if(myChart) myChart.destroy();
             myChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: recent.map(d => d.po_number),
+                    labels: recent.map(d => d.po_number === 'MANUAL_CHK' ? 'Manual' : d.po_number),
                     datasets: [{ 
-                        label: 'Risk Level (0=Low, 1=High)', 
+                        label: 'Risk Score History', 
                         data: recent.map(d => d.risk_label), 
                         borderColor: '#0070f2', 
-                        backgroundColor: 'rgba(0, 112, 242, 0.2)',
+                        backgroundColor: 'rgba(0, 112, 242, 0.1)',
                         fill: true,
-                        tension: 0.4 
+                        tension: 0.3 
                     }]
                 },
-                options: { maintainAspectRatio: false }
+                options: { 
+                    maintainAspectRatio: false,
+                    scales: { y: { min: 0, max: 1, ticks: { stepSize: 1 } } }
+                }
             });
         }
 
         async function runPredict() {
+            const amt = document.getElementById('amt').value;
+            if(!amt) return alert("Please enter an amount");
+
             const r = await fetch('/predict', { 
                 method: 'POST', 
                 headers: {'Content-Type': 'application/json'}, 
                 body: JSON.stringify({
-                    amount: document.getElementById('amt').value, 
+                    amount: amt, 
                     currency: document.getElementById('curr').value, 
                     vendor_score: document.getElementById('vscore').value
                 }) 
@@ -155,12 +201,12 @@
             const d = await r.json();
             const res = document.getElementById('manualRes');
             res.className = `mt-3 p-3 rounded text-center bg-${d.status} text-white d-block`;
-            res.innerHTML = `RESULT: ${d.risk} (${d.confidence})`;
+            res.innerHTML = `RESULT: ${d.risk.toUpperCase()} (${d.confidence} Confidence)`;
             updateData();
         }
 
         window.onload = updateData;
-        setInterval(updateData, 30000); // Auto-refresh UI every 30 seconds
+        setInterval(updateData, 30000);
     </script>
 </body>
 </html>
